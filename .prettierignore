@@ -1,0 +1,4 @@
+vendor
+*.md
+Dockerfile*
+docker-compose*

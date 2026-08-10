@@ -1,0 +1,16 @@
+/vendor/
+/composer.lock
+/.phpunit.cache/
+/.php-cs-fixer.cache
+/.phpstan.cache/
+/coverage/
+.DS_Store
+.idea/
+.vscode/
+
+# Local-only agent instructions and notes — never published.
+CLAUDE.local.md
+/.claude/settings.local.json
+
+# Internal planning documents — not part of the public package.
+/docs/PENDING.md
