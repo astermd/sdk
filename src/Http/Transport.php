@@ -75,6 +75,11 @@ final class Transport
      * and applies any extra `$headers`. On 401 the token is refreshed and the request
      * is replayed once before raising {@see AuthenticationException}.
      *
+     * The handful of endpoints that take bytes rather than JSON pass a {@see FileUpload}
+     * as `$file` instead of `$body`; the request is then encoded as a single-part
+     * `multipart/form-data` body under the field name `file`, with a fresh random
+     * boundary per request. `$body` and `$file` are mutually exclusive.
+     *
      * @param string                     $service    Service segment of the URL (e.g. `sales`, `auth`).
      * @param string                     $method     HTTP method in uppercase (e.g. `GET`, `POST`, `PUT`, `PATCH`, `DELETE`).
      * @param string                     $path       Path relative to `/v1/{service}`, with `{placeholder}` tokens for path params
@@ -84,6 +89,8 @@ final class Transport
      * @param array<string, mixed>|null  $body       Request body as a PHP array; `null` sends no body. An empty array `[]`
      *                                               is serialised as `{}` to satisfy AsterMD's object-shape requirement.
      * @param array<string, string>      $headers    Additional request headers (e.g. `x-phi-verification-token`).
+     * @param FileUpload|null            $file       File to send as a `multipart/form-data` body under the field name
+     *                                               `file`; mutually exclusive with `$body`.
      *
      * @return Response the decoded success envelope; `data()` holds the primary resource payload
      *
@@ -93,6 +100,7 @@ final class Transport
      * @throws \AsterMD\Sdk\Exception\RateLimitException      if the request returns 429 (retry delay available via `retryAfter()`)
      * @throws \AsterMD\Sdk\Exception\ApiException            if the request returns any other non-2xx status
      * @throws \AsterMD\Sdk\Exception\TransportException      if a network-level failure (cURL error, DNS, TLS, timeout) prevents the request from completing
+     * @throws \InvalidArgumentException                       if both `$body` and `$file` are given
      */
     public function send(
         string $service,
@@ -102,11 +110,16 @@ final class Transport
         array $query = [],
         ?array $body = null,
         array $headers = [],
+        ?FileUpload $file = null,
     ): Response {
-        $response = $this->dispatch($service, $method, $path, $pathParams, $query, $body, $headers);
+        if ($body !== null && $file !== null) {
+            throw new \InvalidArgumentException('A request carries either a JSON body or a file upload, not both.');
+        }
+
+        $response = $this->dispatch($service, $method, $path, $pathParams, $query, $body, $headers, $file);
 
         if ($response->getStatusCode() === 401 && ($this->onUnauthorized)()) {
-            $response = $this->dispatch($service, $method, $path, $pathParams, $query, $body, $headers);
+            $response = $this->dispatch($service, $method, $path, $pathParams, $query, $body, $headers, $file);
         }
 
         return $this->handle($response);
@@ -126,6 +139,7 @@ final class Transport
         array $query,
         ?array $body,
         array $headers,
+        ?FileUpload $file = null,
     ): ResponseInterface {
         $url = $this->urlBuilder->build($service, $path, $pathParams, $query);
         $request = $this->requestFactory->createRequest($method, $url)
@@ -149,11 +163,36 @@ final class Transport
                 ->withBody($this->streamFactory->createStream($json));
         }
 
+        if ($file !== null) {
+            $boundary = bin2hex(random_bytes(20));
+            $request = $request
+                ->withHeader('Content-Type', 'multipart/form-data; boundary=' . $boundary)
+                ->withBody($this->streamFactory->createStream($this->encodeMultipart($file, $boundary)));
+        }
+
         try {
             return $this->httpClient->sendRequest($request);
         } catch (ClientExceptionInterface $e) {
             throw new TransportException($e->getMessage(), 0, $e);
         }
+    }
+
+    /**
+     * Renders a single-part `multipart/form-data` body for the given file.
+     *
+     * The part is always named `file` — every AsterMD endpoint that accepts bytes
+     * uses that field name. Line endings are CRLF as RFC 7578 requires; the file
+     * name and MIME type are taken verbatim from the upload, which normalises the
+     * name so it cannot break out of the `Content-Disposition` header.
+     */
+    private function encodeMultipart(FileUpload $file, string $boundary): string
+    {
+        return "--{$boundary}\r\n"
+            . 'Content-Disposition: form-data; name="file"; filename="' . $file->fileName() . "\"\r\n"
+            . 'Content-Type: ' . $file->mimeType() . "\r\n"
+            . "\r\n"
+            . $file->contents() . "\r\n"
+            . "--{$boundary}--\r\n";
     }
 
     private function handle(ResponseInterface $response): Response

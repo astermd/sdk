@@ -5,7 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.0.2] - 2026-09-08
+
+### Added
+
+- `intakeSubmissions()->uploadFile()` for single-request uploads of `file`-type
+  answers, and the four multipart-upload methods —
+  `initiateMultipartUpload()`, `uploadMultipartPart()`,
+  `finishMultipartUpload()`, `abortMultipartUpload()` — for files too large for
+  one request.
+- `intakeSubmissions()->uploadLargeFile()`, which drives the whole multipart
+  flow: it streams the file from disk one part at a time, collects each part's
+  ETag, finishes the upload, and aborts it if any step fails.
+- `AsterMD\Sdk\Http\FileUpload`, an immutable file value object built with
+  `FileUpload::fromPath()` or `FileUpload::fromContents()`, accepted by every
+  endpoint that takes bytes rather than JSON.
+
+### Changed
+
+- `Transport::send()` accepts an optional `FileUpload` and encodes it as a
+  `multipart/form-data` body; it remains the only place that builds requests.
+- Debug logging drops the body of a file-upload request entirely. Upload bytes
+  are PHI, and rendering them into a cURL command would make the log unusable.
 
 ## [0.0.1] - 2026-08-10
 

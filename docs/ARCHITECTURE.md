@@ -59,6 +59,7 @@ src/
 │   ├── FileTokenStore.php    file-backed store; survives across requests, 0o600 permissions
 │   └── TokenManager.php      owns its OWN no-auth Transport for token exchange
 ├── Http/
+│   ├── FileUpload.php        immutable file + name + MIME type for multipart requests
 │   ├── NativeCurlClient.php  default PSR-18; ext-curl only, no Guzzle
 │   ├── CurlFormatter.php     formats a PSR-7 request as a copy-pasteable curl command
 │   ├── CurlLoggingClient.php PSR-18 decorator that logs requests + responses when debug=true
@@ -113,7 +114,7 @@ For a typical authenticated call (e.g. `patients()->view('p1')`):
 2. **`Transport::send()`** calls the injected `tokenProvider` closure.
    In the production wiring this closure delegates to `TokenManager::bearerToken()`.
 3. **`TokenManager`** checks its `TokenStore` for a non-expired token. If found, returns the JWT string. Otherwise it dispatches a token-exchange request through its own _separate_, _unauthenticated_ `Transport` to `POST /v1/auth/api-credentials/token`, parses `access_token` + `access_token_expiry`, stores the result, and returns the JWT.
-4. **`Transport`** builds a PSR-7 request via `UrlBuilder` (`https://{host}/v1/{service}/{path}`), sets `Authorization: Bearer <jwt>` and `Accept: application/json`, attaches any extra headers (e.g. `x-phi-verification-token`), and encodes the body if present.
+4. **`Transport`** builds a PSR-7 request via `UrlBuilder` (`https://{host}/v1/{service}/{path}`), sets `Authorization: Bearer <jwt>` and `Accept: application/json`, attaches any extra headers (e.g. `x-phi-verification-token`), and encodes the body if present. A `FileUpload` passed instead of an array body is encoded as a single-part `multipart/form-data` body under the field name `file`, with a fresh random boundary per request; the two are mutually exclusive.
 5. **PSR-18 client** sends the request. By default this is `NativeCurlClient` (`ext-curl`). Network failure raises `TransportException`.
 6. **`Transport`** reads the response status. If 2xx, it decodes the envelope and returns a `Response`. If 401, it calls the `onUnauthorized` closure — which delegates to `TokenManager::refresh()` — and replays the request once. If the replay still 401s (or for any non-2xx other than the single 401 retry path), it maps the status to the matching exception subclass and throws.
 7. **Resource method** returns the `Response` value object to the caller.
@@ -145,4 +146,4 @@ If a proposed change violates any of these, raise it on a PR first — the small
 
 A `CurlLoggingClient` decorator can optionally wrap the PSR-18 client (inserted between `AsterMDClient` and all downstream consumers) when `debug: true` is passed at construction; this covers both the main API calls and the token-exchange request without modifying `Transport` or `TokenManager`.
 
-Because that decorator sees the credential exchange, it is also the only place that can leak one. A `LogRedactor` is attached by default and masks bearer tokens, the client secret, PHI verification tokens, and `patients/*` bodies before anything reaches the sink; `debugRedact: false` removes it. Sink behaviour is likewise pluggable: `DailyFileLogSink` handles the built-in dated-file-plus-retention case, and any `debugSink` closure replaces it entirely.
+Because that decorator sees the credential exchange, it is also the only place that can leak one. A `LogRedactor` is attached by default and masks bearer tokens, the client secret, PHI verification tokens, `patients/*` bodies, and the raw bytes of file uploads before anything reaches the sink; `debugRedact: false` removes it. Sink behaviour is likewise pluggable: `DailyFileLogSink` handles the built-in dated-file-plus-retention case, and any `debugSink` closure replaces it entirely.

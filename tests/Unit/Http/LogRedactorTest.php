@@ -149,4 +149,48 @@ final class LogRedactorTest extends TestCase
 
         self::assertSame('/v1/sales/patients/create', $this->redactor->pathOf($request));
     }
+
+    public function testSingleShotUploadBodyIsDropped(): void
+    {
+        $redactor = new LogRedactor();
+
+        self::assertSame(
+            LogRedactor::UPLOAD_PLACEHOLDER,
+            $redactor->body("\xff\xd8\xffbinary", '/v1/sales/intake-submissions/upload-file/sess-uuid'),
+        );
+    }
+
+    public function testMultipartPartBodyIsDropped(): void
+    {
+        $redactor = new LogRedactor();
+
+        self::assertSame(
+            LogRedactor::UPLOAD_PLACEHOLDER,
+            $redactor->body('chunk-bytes', '/v1/sales/intake-submissions/upload-file-multipart/part/upload-uuid'),
+        );
+    }
+
+    public function testMultipartControlBodiesAreNotDropped(): void
+    {
+        $redactor = new LogRedactor();
+
+        $initiate = '{"file_name":"consult-video.mp4","mime_type":"video/mp4","file_size":157286400}';
+        self::assertSame(
+            $initiate,
+            $redactor->body($initiate, '/v1/sales/intake-submissions/upload-file-multipart/initiate/sess-uuid'),
+        );
+
+        $finish = '{"parts":[{"part_number":1,"etag":"\"abc\""}]}';
+        self::assertSame(
+            $finish,
+            $redactor->body($finish, '/v1/sales/intake-submissions/upload-file-multipart/finish/upload-uuid'),
+        );
+    }
+
+    public function testIsBinaryUploadPathIsCaseInsensitive(): void
+    {
+        self::assertTrue(
+            new LogRedactor()->isBinaryUploadPath('/V1/SALES/INTAKE-SUBMISSIONS/UPLOAD-FILE/SESS'),
+        );
+    }
 }

@@ -410,6 +410,12 @@ All methods return `AsterMD\Sdk\Response`.
 | `view(string $id, string $teleformId): Response`                                                          | GET  | `/v1/sales/intake-submissions/view/{id}`         |
 | `create(string $session, Event $event, string $teleformId, array $data, ?array $progress = null): Response` | POST | `/v1/sales/intake-submissions/create`            |
 | `update(string $session, Event $event, string $teleformId, array $data, ?array $progress = null): Response` | PUT  | `/v1/sales/intake-submissions/update/{session}`  |
+| `uploadFile(string $sessionId, FileUpload $file): Response`                                               | POST | `/v1/sales/intake-submissions/upload-file/{session_id}` |
+| `initiateMultipartUpload(string $sessionId, string $fileName, string $mimeType, int $fileSize): Response` | POST | `/v1/sales/intake-submissions/upload-file-multipart/initiate/{session_id}` |
+| `uploadMultipartPart(string $uploadId, int $partNumber, FileUpload $part): Response`                      | POST | `/v1/sales/intake-submissions/upload-file-multipart/part/{upload_id}?part_number=…` |
+| `finishMultipartUpload(string $uploadId, array $parts): Response`                                         | POST | `/v1/sales/intake-submissions/upload-file-multipart/finish/{upload_id}` |
+| `abortMultipartUpload(string $uploadId): Response`                                                        | POST | `/v1/sales/intake-submissions/upload-file-multipart/abort/{upload_id}` |
+| `uploadLargeFile(string $sessionId, string $filePath, ?string $fileName = null, ?string $mimeType = null, int $partSize = 10485760): Response` | — | drives the four multipart calls above |
 
 `view()`'s `$id` is the **session UUID** (the submission is looked up by session + `teleform_id`). `$data` is a list of field objects (`{id, name, label, type, value[]}`). `$progress` (`{page, total}`) is optional for multi-page forms. The stored `data` and the server-derived `contact` block are **PHI** — do not log the response body.
 
@@ -417,6 +423,68 @@ All methods return `AsterMD\Sdk\Response`.
 
 - `Event::PreQualifyingInitiated` / `InProgress` / `Completed`
 - `Event::IntakeInitiated` / `InProgress` / `Completed`
+
+#### Uploading answers to `file`-type fields
+
+A `file`-type field's bytes are uploaded **before** the submission that references
+them. The upload endpoints do not touch the submission itself: each returns a
+`{path, name, mime_type}` object, which you attach to the matching entry of that
+field's `value` list in the `$data` you pass to `create()` or `update()`. A field may
+accept several files (the form builder's `maxFiles` property); every upload gets its
+own stored name, so repeated uploads against one session accumulate.
+
+Files are handed to the SDK as a `FileUpload` — `AsterMD\Sdk\Http\FileUpload`:
+
+```php
+use AsterMD\Sdk\Http\FileUpload;
+
+// From a path — file name and MIME type are derived from it.
+$upload = FileUpload::fromPath('/var/uploads/id-front.jpg');
+
+// From bytes already in memory — the file name is required.
+$upload = FileUpload::fromContents($bytes, 'id-front.jpg', 'image/jpeg');
+```
+
+**Small files — one request.** `uploadFile()` takes up to 10 MB and accepts JPEG,
+PNG, WebP, GIF, PDF, DOC, DOCX, and plain text:
+
+```php
+$result = $client->intakeSubmissions()
+    ->uploadFile($sessionId, FileUpload::fromPath('/var/uploads/id-front.jpg'))
+    ->data();
+
+// $result === ['path' => '…/id-front-<uuid>.jpg', 'name' => '…', 'mime_type' => 'image/jpeg']
+```
+
+**Large files — the multipart flow.** Video answers (`video/mp4`,
+`video/quicktime`, `video/webm`, up to 200 MB) go through a chunked multipart upload.
+`uploadLargeFile()` runs the whole flow for you, streaming the file from disk one
+part at a time so memory use stays at `$partSize` regardless of file size, and
+aborting the upload if any step fails:
+
+```php
+$result = $client->intakeSubmissions()
+    ->uploadLargeFile($sessionId, '/var/uploads/consult-video.mp4')
+    ->data();
+```
+
+Drive the four calls yourself when you need parts uploaded in parallel, or an upload
+resumed in another process:
+
+1. `initiateMultipartUpload()` → returns `upload_id`.
+2. `uploadMultipartPart()` once per chunk, in any order → returns `{part_number, etag}`.
+   Collect every pair; the server does not track them.
+3. `finishMultipartUpload()` with the full set → returns `{path, name, mime_type}`.
+4. `abortMultipartUpload()` instead, to cancel — idempotent, and safe to call after a
+   finish or a previous abort.
+
+Part sizes must be between 5 MB (`IntakeSubmissions::MIN_PART_SIZE`, the minimum the
+server accepts for any non-final part) and 25 MB (`MAX_PART_SIZE`, its cap); the final
+part may be smaller. Pass each ETag back exactly as received, surrounding quote characters
+included.
+
+Uploaded bytes are **PHI**. The SDK never writes them to a debug log, even with
+`debug: true`.
 
 ### `carts()`
 

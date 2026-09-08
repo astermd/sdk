@@ -33,6 +33,13 @@ use Psr\Http\Message\RequestInterface;
  * including a Social Security Number in the identity case — that must not appear in
  * logs under any circumstances.
  *
+ * File-upload bodies are dropped too, for two reasons: the bytes of a scanned ID or
+ * a consultation video are PHI, and rendering megabytes of binary into a cURL command
+ * would make the log unusable regardless. This covers the single-shot upload endpoint
+ * and the multipart `part` endpoint; the multipart `initiate`, `finish`, and `abort`
+ * bodies are small JSON control messages carrying no file contents and are logged in
+ * full.
+ *
  * Redaction covers headers and bodies only; the request URL is logged verbatim.
  * Endpoints that take their input as a query parameter therefore log that input, so
  * debug entries for `extensions/email-verify`, `extensions/geo-info`,
@@ -50,6 +57,9 @@ final class LogRedactor
 
     /** Marker written in place of a body that was dropped wholesale. */
     public const PHI_PLACEHOLDER = '[REDACTED — PHI endpoint]';
+
+    /** Marker written in place of the raw file bytes of an upload request. */
+    public const UPLOAD_PLACEHOLDER = '[REDACTED — binary upload]';
 
     /**
      * Header names whose values are always replaced, compared case-insensitively.
@@ -102,14 +112,15 @@ final class LogRedactor
     /**
      * Returns the loggable form of a request or response body.
      *
-     * Bodies belonging to a PHI-carrying path are replaced entirely. Every other
+     * Bodies belonging to a PHI-carrying path, and the raw file bytes sent to an
+     * upload endpoint, are replaced entirely. Every other
      * body has its sensitive JSON fields rewritten in place; the surrounding
      * structure is left intact so the entry stays readable and replayable apart
      * from the redacted values. Non-JSON bodies pass through unchanged except for
      * the same field-level substitution, which is applied textually.
      *
      * @param string $body the raw body as it would otherwise be logged
-     * @param string $path the request path, used to detect PHI-carrying endpoints
+     * @param string $path the request path, used to detect PHI-carrying and upload endpoints
      *
      * @return string the body to write to the log
      */
@@ -121,6 +132,10 @@ final class LogRedactor
 
         if ($this->isPhiPath($path)) {
             return self::PHI_PLACEHOLDER;
+        }
+
+        if ($this->isBinaryUploadPath($path)) {
+            return self::UPLOAD_PLACEHOLDER;
         }
 
         return $this->redactFields($body);
@@ -139,6 +154,26 @@ final class LogRedactor
 
         return str_contains($path, '/patients')
             || str_contains($path, '/extensions/identity-verify');
+    }
+
+    /**
+     * Reports whether a request path carries raw file bytes and must have its body dropped.
+     *
+     * True for the single-shot intake-submission upload endpoint and for the
+     * multipart `part` endpoint. The multipart `initiate`, `finish`, and `abort`
+     * endpoints carry only small JSON control messages, so they are excluded and
+     * their bodies stay in the log where they are useful for debugging.
+     *
+     * @param string $path the request path (with or without the leading `/v1/{service}` prefix)
+     *
+     * @return bool true when the body is the contents of a file rather than JSON
+     */
+    public function isBinaryUploadPath(string $path): bool
+    {
+        $path = strtolower($path);
+
+        return str_contains($path, '/intake-submissions/upload-file/')
+            || str_contains($path, '/upload-file-multipart/part/');
     }
 
     /**

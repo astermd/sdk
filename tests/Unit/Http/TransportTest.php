@@ -8,6 +8,7 @@ use AsterMD\Sdk\Exception\ApiException;
 use AsterMD\Sdk\Exception\NotFoundException;
 use AsterMD\Sdk\Exception\RateLimitException;
 use AsterMD\Sdk\Exception\ValidationException;
+use AsterMD\Sdk\Http\FileUpload;
 use AsterMD\Sdk\Http\Transport;
 use AsterMD\Sdk\Http\UrlBuilder;
 use AsterMD\Sdk\Response;
@@ -93,6 +94,63 @@ final class TransportTest extends TestCase
         );
 
         self::assertSame('phi-token-xyz', $this->http->lastRequest()->getHeaderLine('x-phi-verification-token'));
+    }
+
+    public function testFileUploadIsSentAsMultipartFormData(): void
+    {
+        $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');
+
+        $this->transport->send(
+            'sales',
+            'POST',
+            '/intake-submissions/upload-file/{session_id}',
+            pathParams: ['session_id' => 'sess-uuid'],
+            file: FileUpload::fromContents('jpeg-bytes', 'id-front.jpg'),
+        );
+
+        $req = $this->http->lastRequest();
+        $contentType = $req->getHeaderLine('Content-Type');
+        self::assertMatchesRegularExpression('#^multipart/form-data; boundary=[A-Za-z0-9]+$#', $contentType);
+
+        $boundary = substr($contentType, strlen('multipart/form-data; boundary='));
+
+        self::assertSame(
+            "--{$boundary}\r\n"
+            . "Content-Disposition: form-data; name=\"file\"; filename=\"id-front.jpg\"\r\n"
+            . "Content-Type: image/jpeg\r\n"
+            . "\r\n"
+            . "jpeg-bytes\r\n"
+            . "--{$boundary}--\r\n",
+            (string) $req->getBody(),
+        );
+    }
+
+    public function testEachMultipartRequestUsesItsOwnBoundary(): void
+    {
+        $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');
+        $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');
+
+        $file = FileUpload::fromContents('bytes', 'part-1');
+        $this->transport->send('sales', 'POST', '/x', file: $file);
+        $this->transport->send('sales', 'POST', '/x', file: $file);
+
+        self::assertNotSame(
+            $this->http->requests[0]->getHeaderLine('Content-Type'),
+            $this->http->requests[1]->getHeaderLine('Content-Type'),
+        );
+    }
+
+    public function testSendRejectsBodyAndFileTogether(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->transport->send(
+            'sales',
+            'POST',
+            '/x',
+            body: ['a' => 'b'],
+            file: FileUpload::fromContents('bytes', 'x.txt'),
+        );
     }
 
     public function testMaps404ToNotFoundException(): void
