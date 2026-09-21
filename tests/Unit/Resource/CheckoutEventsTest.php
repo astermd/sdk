@@ -109,4 +109,27 @@ final class CheckoutEventsTest extends TestCase
             (string) $this->http->lastRequest()->getBody(),
         );
     }
+
+    public function testUpdateOrderPlacedForwardsPaymentWhenProvided(): void
+    {
+        $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');
+
+        $this->resource->update('sess-uuid', CheckoutEvent::OrderPlaced, [
+            'order_total' => 99.0,
+            'payment' => [
+                'type' => 'credit_card',
+                'pre_auth' => false,
+                'card' => [
+                    'type' => 'visa',
+                    'exp' => '12/29',
+                ],
+            ],
+        ]);
+
+        self::assertJsonStringEqualsJsonString(
+            '{"event":"order_placed","order_total":99.0,"payment":'
+                . '{"type":"credit_card","pre_auth":false,"card":{"type":"visa","exp":"12/29"}}}',
+            (string) $this->http->lastRequest()->getBody(),
+        );
+    }
 }

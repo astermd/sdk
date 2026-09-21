@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AsterMD\Sdk\Resource;
 
 use AsterMD\Sdk\Response;
+use InvalidArgumentException;
 
 /**
  * Treatment (order) operations on the `sales` service.
@@ -107,27 +108,59 @@ final class Treatments extends AbstractResource
      * issued by the payment aggregator. Inspect `$response->data()` for the created
      * treatment records.
      *
-     * Pass `$userAgent` to attribute the import to the visitor's browser: it is
-     * forwarded verbatim as the `User-Agent` request header. Because the SDK runs
+     * `$userAgent` attributes the import to the visitor's browser: it is forwarded
+     * verbatim as the required `User-Agent` request header. Because the SDK runs
      * server-to-server, only the consuming application knows the real value — read
-     * it from `$_SERVER['HTTP_USER_AGENT']` and pass it here. When `null` or empty,
-     * no `User-Agent` header is added and the HTTP client's default applies.
+     * it from `$_SERVER['HTTP_USER_AGENT']` and pass it here.
      *
-     * @param string       $session   the session UUID to associate with the imported orders
-     * @param list<string> $orderIds  list of external CRM order identifiers to import
-     * @param string|null  $utmSource optional marketing attribution source (e.g. `google`, `facebook`);
-     *                                 sent as `utm_source` only when provided
-     * @param string|null  $userAgent the visitor's browser User-Agent to forward as the `User-Agent`
-     *                                 header (e.g. `$_SERVER['HTTP_USER_AGENT']`); `null` or empty omits it
+     * `$payment`, when supplied, carries the settled payment method for the order.
+     * `card`, when present, additionally requires `type` (one of `amex`, `visa`,
+     * `mastercard`, `discover`, `diners_club`, `jcb`) and `exp`, with `bin` optional.
+     *
+     * `$verification`, when supplied, records identity/contact verification already
+     * performed by the caller. `id`, when present, additionally requires `verified`
+     * and `method` (one of `ssn`, `dob`, `cross_check`, `document_upload`), plus the
+     * verified `value`.
+     *
+     * @param string        $session      the session UUID to associate with the imported orders
+     * @param list<string>  $orderIds     list of external CRM order identifiers to import
+     * @param string        $userAgent    the visitor's browser User-Agent to forward as the required
+     *                                    `User-Agent` header (e.g. `$_SERVER['HTTP_USER_AGENT']`)
+     * @param string|null   $utmSource    optional marketing attribution source (e.g. `google`, `facebook`);
+     *                                    sent as `utm_source` only when provided
+     * @param array{
+     *     type: string,
+     *     pre_auth: bool,
+     *     pre_auth_qa?: bool,
+     *     pre_auth_amount?: int|float,
+     *     card?: array<string, mixed>
+     * }|null $payment the settled payment method; `type` is one of `paypal`, `apple_pay`,
+     *                  `gpay`, `credit_card`, `pre_paid`
+     * @param array{
+     *     email: bool,
+     *     address: bool,
+     *     id?: array<string, mixed>
+     * }|null $verification identity/contact verification already performed by the caller
      *
      * @return Response the sync result envelope; `data()` contains the created treatment records
      *
+     * @throws \InvalidArgumentException                  if `$userAgent` is empty
      * @throws \AsterMD\Sdk\Exception\ValidationException if `$orderIds` is empty or malformed
      * @throws \AsterMD\Sdk\Exception\ApiException        on a non-2xx response from the server
      * @throws \AsterMD\Sdk\Exception\TransportException  on a network-level failure
      */
-    public function sync(string $session, array $orderIds, ?string $utmSource = null, ?string $userAgent = null): Response
-    {
+    public function sync(
+        string $session,
+        array $orderIds,
+        string $userAgent,
+        ?string $utmSource = null,
+        ?array $payment = null,
+        ?array $verification = null,
+    ): Response {
+        if ($userAgent === '') {
+            throw new InvalidArgumentException('treatments/sync requires a non-empty User-Agent.');
+        }
+
         $body = [
             'session_id' => $session,
             'order_ids' => $orderIds,
@@ -137,10 +170,14 @@ final class Treatments extends AbstractResource
             $body['utm_source'] = $utmSource;
         }
 
-        $headers = ($userAgent !== null && $userAgent !== '')
-            ? ['User-Agent' => $userAgent]
-            : [];
+        if ($payment !== null) {
+            $body['payment'] = $payment;
+        }
 
-        return $this->transport->send('sales', 'POST', '/treatments/sync', body: $body, headers: $headers);
+        if ($verification !== null) {
+            $body['verification'] = $verification;
+        }
+
+        return $this->transport->send('sales', 'POST', '/treatments/sync', body: $body, headers: ['User-Agent' => $userAgent]);
     }
 }

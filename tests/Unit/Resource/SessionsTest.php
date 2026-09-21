@@ -114,6 +114,22 @@ final class SessionsTest extends TestCase
         self::assertFalse($this->http->lastRequest()->hasHeader('X-Original-Client-Ip'));
     }
 
+    public function testCreateForwardsVerificationWhenProvided(): void
+    {
+        $this->http->enqueue(200, '{"success":true,"message":"ok","data":{"session":"uuid"},"meta":{}}');
+
+        $verification = [
+            'email' => true,
+            'id' => ['verified' => true, 'method' => 'dob', 'value' => '1990-01-01'],
+        ];
+        $this->sessions->create(['verification' => $verification]);
+
+        self::assertJsonStringEqualsJsonString(
+            '{"verification":{"email":true,"id":{"verified":true,"method":"dob","value":"1990-01-01"}}}',
+            (string) $this->http->lastRequest()->getBody(),
+        );
+    }
+
     public function testViewSingleSessionUsesQueryString(): void
     {
         $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');
@@ -167,6 +183,18 @@ final class SessionsTest extends TestCase
         self::assertSame('PUT', $req->getMethod());
         self::assertSame('https://api.astermd.com/v1/sales/sessions/update/abc-123', (string) $req->getUri());
         self::assertJsonStringEqualsJsonString('{"session":"abc-123"}', (string) $req->getBody());
+    }
+
+    public function testUpdateForwardsVerificationWhenProvided(): void
+    {
+        $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');
+
+        $this->sessions->update('abc-123', ['verification' => ['address' => true]]);
+
+        self::assertJsonStringEqualsJsonString(
+            '{"verification":{"address":true}}',
+            (string) $this->http->lastRequest()->getBody(),
+        );
     }
 
     public function testDeleteRemovesSession(): void

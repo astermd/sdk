@@ -369,7 +369,7 @@ $treatment = $client->treatments()->create([
 ])->data();
 ```
 
-> **Alternative when the order originates in an external CRM:** if your CRM is the source of truth for the order record and you only need AsterMD to be aware of it, call `$client->treatments()->sync($session, ['28618'])` instead of `treatments()->create(...)`.
+> **Alternative when the order originates in an external CRM:** if your CRM is the source of truth for the order record and you only need AsterMD to be aware of it, call `$client->treatments()->sync($session, ['28618'], $_SERVER['HTTP_USER_AGENT'])` instead of `treatments()->create(...)`.
 
 ### Step 12 — Resume from any step
 
@@ -532,9 +532,12 @@ Uploaded bytes are **PHI**. The SDK never writes them to a debug log, even with
 | `create(array $data): Response`                                    | POST | `/v1/sales/treatments/create`    |
 | `view(string $id): Response`                                       | GET  | `/v1/sales/treatments/view/{id}` |
 | `list(array $query = []): Response`                                | GET  | `/v1/sales/treatments/list`      |
-| `sync(string $session, array $orderIds, ?string $utmSource = null, ?string $userAgent = null): Response` | POST | `/v1/sales/treatments/sync`      |
+| `sync(string $session, array $orderIds, string $userAgent, ?string $utmSource = null, ?array $payment = null, ?array $verification = null): Response` | POST | `/v1/sales/treatments/sync`      |
 
 Use `sync()` to push an order settled in an external CRM into AsterMD after settlement happens outside the SDK.
+`$userAgent` is required by the API. `$payment` and `$verification` are optional and
+carry the settled payment method and any identity/contact verification already
+performed by the caller.
 
 ### `doctorsNetworks()`
 
@@ -1148,4 +1151,4 @@ block ends with `# Transport error: <message>` in place of the response section.
 - **`AuthenticationException` after one auto-retry is final.** The SDK does not loop; treat it as a configuration error.
 - **PHP empty arrays encode as JSON `[]`, not `{}`.** If an endpoint requires a JSON object and you have no fields, pass `(object) []` (a stdClass instance) so PHP encodes it as `{}`. The SDK already handles the known case: `sessions()->create()` coerces empty `data` to `{}` internally. (`intakeSubmissions()->create()` / `->update()` take a list of field objects, so their empty `data` is correctly sent as `[]`.) If you hit a `validation.isObject` 400 on any other endpoint, that's the cause — wrap the empty field with `(object) []`.
 - **`sessions()->view()` takes an array of IDs.** `view(['uuid'])` for a single lookup, `view(['a','b'])` to batch-fetch; pass an IANA tz as the 2nd arg (`view(['uuid'], 'Asia/Kolkata')`) to format response timestamps. The real route is `/sessions/view?session_ids=…` (comma-joined).
-- **Forward the visitor's `User-Agent` and IP yourself.** The SDK runs server-to-server, so it cannot see the visitor's browser or IP. For device/geo attribution, pass `$_SERVER['HTTP_USER_AGENT']` and `$_SERVER['REMOTE_ADDR']` to `sessions()->create(userAgent: …, clientIp: …)` — the SDK sends them as the `User-Agent` and `X-Original-Client-Ip` headers. (`treatments()->sync()` likewise accepts `userAgent`.) Otherwise the server attributes the call to the PHP client's UA/IP. Each header is omitted when its arg is null/empty.
+- **Forward the visitor's `User-Agent` and IP yourself.** The SDK runs server-to-server, so it cannot see the visitor's browser or IP. For device/geo attribution, pass `$_SERVER['HTTP_USER_AGENT']` and `$_SERVER['REMOTE_ADDR']` to `sessions()->create(userAgent: …, clientIp: …)` — the SDK sends them as the `User-Agent` and `X-Original-Client-Ip` headers. Each header is omitted when its arg is null/empty. `treatments()->sync()` also takes a `$userAgent`, but there it's a required argument — the API rejects the call without it.
