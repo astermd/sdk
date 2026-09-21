@@ -88,7 +88,13 @@ final class CheckoutEvents extends AbstractResource
      *                                       `payment_method` (string — `apple_pay`|`google_pay`|`card`|`paypal`),
      *                                       `currency` (string ISO 4217 — order events),
      *                                       `provider_order_id` (list<string> — payment provider order ids),
-     *                                       `opportunity_id` (string — optional CRM opportunity id). Full schema in the
+     *                                       `opportunity_id` (string — optional CRM opportunity id),
+     *                                       `payment` (array, optional — order events; the settled payment method.
+     *                                       Shape: `type` (`paypal`|`apple_pay`|`gpay`|`credit_card`|`pre_paid`),
+     *                                       `pre_auth` (bool), `pre_auth_qa` (bool, optional),
+     *                                       `pre_auth_amount` (number, optional), `card` (array, optional — `type`
+     *                                       one of `amex`|`visa`|`mastercard`|`discover`|`diners_club`|`jcb`, `bin`
+     *                                       optional, `exp` required)). Full schema in the
      *                                       API reference under `/checkout-events/update/{session_id}`.
      *
      * @return Response the updated checkout-event envelope

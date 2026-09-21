@@ -61,7 +61,8 @@ final class TreatmentsTest extends TestCase
     {
         $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');
 
-        $this->resource->sync('17de25ac-ba67-4f6e-8067-d752e800ae47', ['28618', '28465']);
+        $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+        $this->resource->sync('17de25ac-ba67-4f6e-8067-d752e800ae47', ['28618', '28465'], $ua);
 
         $req = $this->http->lastRequest();
         self::assertSame('POST', $req->getMethod());
@@ -75,11 +76,29 @@ final class TreatmentsTest extends TestCase
         );
     }
 
+    public function testSyncForwardsUserAgentHeader(): void
+    {
+        $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');
+
+        $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+        $this->resource->sync('17de25ac-ba67-4f6e-8067-d752e800ae47', ['28618'], $ua);
+
+        self::assertSame($ua, $this->http->lastRequest()->getHeaderLine('User-Agent'));
+    }
+
+    public function testSyncThrowsWhenUserAgentIsEmpty(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->resource->sync('17de25ac-ba67-4f6e-8067-d752e800ae47', ['28618'], '');
+    }
+
     public function testSyncIncludesUtmSourceWhenProvided(): void
     {
         $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');
 
-        $this->resource->sync('17de25ac-ba67-4f6e-8067-d752e800ae47', ['28618'], 'google');
+        $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+        $this->resource->sync('17de25ac-ba67-4f6e-8067-d752e800ae47', ['28618'], $ua, 'google');
 
         self::assertJsonStringEqualsJsonString(
             '{"session_id":"17de25ac-ba67-4f6e-8067-d752e800ae47","order_ids":["28618"],"utm_source":"google"}',
@@ -87,28 +106,48 @@ final class TreatmentsTest extends TestCase
         );
     }
 
-    public function testSyncForwardsUserAgentHeaderWhenProvided(): void
+    public function testSyncIncludesPaymentWhenProvided(): void
     {
         $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');
 
         $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
-        $this->resource->sync('17de25ac-ba67-4f6e-8067-d752e800ae47', ['28618'], userAgent: $ua);
+        $payment = [
+            'type' => 'credit_card',
+            'pre_auth' => false,
+            'card' => [
+                'type' => 'visa',
+                'exp' => '12/29',
+            ],
+        ];
+        $this->resource->sync('17de25ac-ba67-4f6e-8067-d752e800ae47', ['28618'], $ua, payment: $payment);
 
-        $req = $this->http->lastRequest();
-        self::assertSame($ua, $req->getHeaderLine('User-Agent'));
-        // utm_source omitted when null even with a user agent present.
         self::assertJsonStringEqualsJsonString(
-            '{"session_id":"17de25ac-ba67-4f6e-8067-d752e800ae47","order_ids":["28618"]}',
-            (string) $req->getBody(),
+            '{"session_id":"17de25ac-ba67-4f6e-8067-d752e800ae47","order_ids":["28618"],"payment":'
+                . '{"type":"credit_card","pre_auth":false,"card":{"type":"visa","exp":"12/29"}}}',
+            (string) $this->http->lastRequest()->getBody(),
         );
     }
 
-    public function testSyncOmitsUserAgentHeaderWhenNotProvided(): void
+    public function testSyncIncludesVerificationWhenProvided(): void
     {
         $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');
 
-        $this->resource->sync('17de25ac-ba67-4f6e-8067-d752e800ae47', ['28618']);
+        $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+        $verification = [
+            'email' => true,
+            'address' => false,
+            'id' => [
+                'verified' => true,
+                'method' => 'dob',
+                'value' => '1990-01-01',
+            ],
+        ];
+        $this->resource->sync('17de25ac-ba67-4f6e-8067-d752e800ae47', ['28618'], $ua, verification: $verification);
 
-        self::assertFalse($this->http->lastRequest()->hasHeader('User-Agent'));
+        self::assertJsonStringEqualsJsonString(
+            '{"session_id":"17de25ac-ba67-4f6e-8067-d752e800ae47","order_ids":["28618"],"verification":'
+                . '{"email":true,"address":false,"id":{"verified":true,"method":"dob","value":"1990-01-01"}}}',
+            (string) $this->http->lastRequest()->getBody(),
+        );
     }
 }

@@ -58,6 +58,20 @@ final class CartsTest extends TestCase
         self::assertArrayNotHasKey('channel_id', $body);
     }
 
+    public function testCreateForwardsOptionalVariantId(): void
+    {
+        $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');
+
+        $this->resource->create('sess-uuid', [
+            ['product_id' => 'p1', 'variant_id' => 'v1', 'name' => 'Semaglutide', 'qty' => 2],
+        ]);
+
+        self::assertJsonStringEqualsJsonString(
+            '{"session":"sess-uuid","items":[{"product_id":"p1","variant_id":"v1","name":"Semaglutide","qty":2}]}',
+            (string) $this->http->lastRequest()->getBody(),
+        );
+    }
+
     public function testUpdatePutsBySessionWithItemsOnly(): void
     {
         $this->http->enqueue(200, '{"success":true,"message":"ok","data":{},"meta":{}}');

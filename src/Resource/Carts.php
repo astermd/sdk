@@ -15,11 +15,11 @@ use AsterMD\Sdk\Response;
  * The journey event (`cart_initiated` / `cart_update`) is derived server-side and
  * the `channel_id` comes from the API credential, so callers pass neither.
  *
- * Cart items use the keys `product_id`, `name`, and `qty` (all required). The SDK
- * forwards the item list unmodified, so any additional caller-supplied keys reach
- * the wire unchanged.
+ * Cart items use the keys `product_id`, `name`, and `qty` (all required), plus an
+ * optional `variant_id`. The SDK forwards the item list unmodified, so any
+ * additional caller-supplied keys reach the wire unchanged.
  *
- * @phpstan-type CartItem array{product_id: string, name: string, qty: int}
+ * @phpstan-type CartItem array{product_id: string, variant_id?: string, name: string, qty: int}
  */
 final class Carts extends AbstractResource
 {
@@ -28,12 +28,14 @@ final class Carts extends AbstractResource
      *
      * Call this when the prospect first adds items to their cart. Each item in
      * `$items` must contain `product_id` (ID string), `name`, and
-     * `qty` (integer). The server derives the `cart_initiated` journey event and
-     * resolves the channel from the API credential, so neither is sent. Inspect
-     * `$response->data()` for the created cart record.
+     * `qty` (integer), and may optionally include `variant_id` (ID string) when
+     * the product has variants. The server derives the `cart_initiated` journey
+     * event and resolves the channel from the API credential, so neither is sent.
+     * Inspect `$response->data()` for the created cart record.
      *
      * @param string         $session the session UUID to associate the cart with
-     * @param list<CartItem> $items   list of items to add; each item requires `product_id`, `name`, and `qty`
+     * @param list<CartItem> $items   list of items to add; each item requires `product_id`, `name`, and `qty`,
+     *                                plus an optional `variant_id`
      *
      * @return Response the created cart envelope; `data()` contains the new cart record (with `status` and `items`)
      *
@@ -63,7 +65,8 @@ final class Carts extends AbstractResource
      * changed items. The `cart_update` journey event is derived server-side.
      *
      * @param string         $session the UUID of the session whose cart to update
-     * @param list<CartItem> $items   the replacement item list; each item requires `product_id`, `name`, and `qty`
+     * @param list<CartItem> $items   the replacement item list; each item requires `product_id`, `name`, and `qty`,
+     *                                plus an optional `variant_id`
      *
      * @return Response the updated cart envelope
      *

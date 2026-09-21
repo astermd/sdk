@@ -5,6 +5,30 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.3] - 2026-09-21
+
+### Added
+
+- `checkoutEvents()->update()` documents the optional `payment` field on
+  `order_placed`/`order_declined` events (settled payment method, with a
+  nested `card` sub-object) — it was already forwarded as pass-through data,
+  this only documents the shape.
+- `carts()->create()` and `carts()->update()` accept an optional `variant_id`
+  on each item.
+- `sessions()->create()` and `sessions()->update()` document the optional
+  `verification` field (identity/contact verification already performed by
+  the caller) — pass-through data, this only documents the shape.
+
+### Changed
+
+- **BREAKING:** `treatments()->sync()` gains `$payment` and `$verification`
+  optional array parameters, and `$userAgent` moves earlier in the signature
+  and becomes a required, non-empty argument (the API now requires the
+  `User-Agent` header on this endpoint). Old signature:
+  `sync(string $session, array $orderIds, ?string $utmSource = null, ?string $userAgent = null)`.
+  New signature:
+  `sync(string $session, array $orderIds, string $userAgent, ?string $utmSource = null, ?array $payment = null, ?array $verification = null)`.
+
 ## [0.0.2] - 2026-09-08
 
 ### Added

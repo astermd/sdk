@@ -33,8 +33,12 @@ final class Sessions extends AbstractResource
      * All `$data` fields are optional. Known keys (per the sales API
      * `SessionCreateRequest`): `channel_id` (string — normally derived from the API
      * credential, so rarely needed), `referrer` (string), `utm`
-     * (`{source, medium, campaign}`), and `custom_params` (arbitrary object). The
-     * server also enriches the stored record with `ip`, `geo`, and browser/device
+     * (`{source, medium, campaign}`), `custom_params` (arbitrary object), and
+     * `verification` (array, optional — identity/contact verification already
+     * performed by the caller; every field inside it is optional too. Shape:
+     * `email` (bool), `address` (bool), `id` (array, optional — `verified` (bool),
+     * `method` (`ssn`|`dob`|`cross_check`|`document_upload`), `value` (string)).
+     * The server also enriches the stored record with `ip`, `geo`, and browser/device
      * fields derived from the request; the response `data()` returns that enriched
      * read-model. Any additional keys you pass are forwarded unmodified.
      *
@@ -114,11 +118,14 @@ final class Sessions extends AbstractResource
      *
      * Sends a `PUT` request with `$data` as the JSON body. Use this to attach
      * additional context to a session after creation (e.g. UTM parameters resolved
-     * client-side). Pass only the fields you want to change; the server performs a
-     * merge rather than a full replacement.
+     * client-side, or verification results captured later in the flow). Pass only
+     * the fields you want to change; the server performs a merge rather than a full
+     * replacement. `$data` accepts the same optional `verification` key documented
+     * on {@see self::create()}.
      *
      * @param string               $session the UUID of the session to update
-     * @param array<string, mixed> $data    fields to update on the session record; empty array sends `{}`
+     * @param array<string, mixed> $data    fields to update on the session record; empty array sends `{}`.
+     *                                      Includes the optional `verification` key documented on {@see self::create()}
      *
      * @return Response the updated session envelope
      *
